@@ -251,7 +251,9 @@ contract ConditionRegistry {
         uint256 cancelled,
         uint256 active
     ) {
-        return (totalRegistered, totalExecuted, totalCancelled, totalRegistered - totalExecuted - totalCancelled);
+        uint256 used = totalExecuted + totalCancelled;
+        uint256 activeCount = totalRegistered > used ? totalRegistered - used : 0;
+        return (totalRegistered, totalExecuted, totalCancelled, activeCount);
     }
 
     // =========================================================================
@@ -259,11 +261,13 @@ contract ConditionRegistry {
     // =========================================================================
 
     function setExecutor(address _executor) external onlyOwner {
+        require(_executor != address(0), "Invalid executor");
         executor = _executor;
         emit ExecutorUpdated(_executor);
     }
 
     function setChallengePeriod(uint256 _period) external onlyOwner {
+        require(_period >= 10 && _period <= 100000, "Period out of bounds");
         challengePeriod = _period;
         emit ChallengePeriodUpdated(_period);
     }

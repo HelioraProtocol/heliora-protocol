@@ -16,6 +16,14 @@ contract HelioraPayment {
     IERC20 public paymentToken; // USDC
     uint8 public paymentTokenDecimals;
 
+    bool private _locked;
+    modifier nonReentrant() {
+        require(!_locked, "Reentrant call");
+        _locked = true;
+        _;
+        _locked = false;
+    }
+
     uint256 public constant SUBSCRIPTION_PERIOD = 30 days;
     uint256 public constant GRACE_PERIOD = 3 days;
 
@@ -133,20 +141,27 @@ contract HelioraPayment {
     // SUBSCRIBE WITH ETH
     // =========================================================================
 
-    function subscribeETH(Tier _tier, string calldata _protocolName) external payable {
+    function subscribeETH(Tier _tier, string calldata _protocolName) external payable nonReentrant {
         require(_tier != Tier.TESTNET, "Testnet is free");
         TierConfig memory config = tierConfigs[_tier];
         require(config.active, "Tier not active");
         require(config.priceETH > 0, "ETH price not set");
         require(msg.value >= config.priceETH, "Insufficient ETH");
 
-        // Forward ETH to treasury
-        (bool sent, ) = treasury.call{value: msg.value}("");
+        // Forward exact price to treasury
+        (bool sent, ) = treasury.call{value: config.priceETH}("");
         require(sent, "ETH transfer failed");
 
-        _activateSubscription(msg.sender, _tier, _protocolName, 0, msg.value);
+        // Refund overpayment
+        uint256 refund = msg.value - config.priceETH;
+        if (refund > 0) {
+            (bool refunded, ) = msg.sender.call{value: refund}("");
+            require(refunded, "Refund failed");
+        }
 
-        emit PaymentReceived(msg.sender, _tier, 0, msg.value);
+        _activateSubscription(msg.sender, _tier, _protocolName, 0, config.priceETH);
+
+        emit PaymentReceived(msg.sender, _tier, 0, config.priceETH);
     }
 
     // =========================================================================
@@ -180,7 +195,7 @@ contract HelioraPayment {
     // RENEW SUBSCRIPTION (ETH)
     // =========================================================================
 
-    function renewETH() external payable {
+    function renewETH() external payable nonReentrant {
         Subscription storage sub = subscriptions[msg.sender];
         require(sub.active, "No active subscription");
 
@@ -188,15 +203,23 @@ contract HelioraPayment {
         require(config.priceETH > 0, "ETH price not set");
         require(msg.value >= config.priceETH, "Insufficient ETH");
 
-        (bool sent, ) = treasury.call{value: msg.value}("");
+        // Forward exact price to treasury
+        (bool sent, ) = treasury.call{value: config.priceETH}("");
         require(sent, "ETH transfer failed");
+
+        // Refund overpayment
+        uint256 refund = msg.value - config.priceETH;
+        if (refund > 0) {
+            (bool refunded, ) = msg.sender.call{value: refund}("");
+            require(refunded, "Refund failed");
+        }
 
         uint256 startFrom = sub.expiresAt > block.timestamp ? sub.expiresAt : block.timestamp;
         sub.expiresAt = startFrom + SUBSCRIPTION_PERIOD;
         sub.lastPaymentAt = block.timestamp;
-        sub.totalPaidETH += msg.value;
+        sub.totalPaidETH += config.priceETH;
 
-        _addReceipt(msg.sender, sub.tier, 0, msg.value, startFrom, sub.expiresAt);
+        _addReceipt(msg.sender, sub.tier, 0, config.priceETH, startFrom, sub.expiresAt);
 
         emit SubscriptionRenewed(msg.sender, sub.tier, sub.expiresAt);
     }
@@ -302,7 +325,7 @@ contract HelioraPayment {
     }
 
     // Emergency: withdraw stuck tokens
-    function emergencyWithdrawToken(address _token, uint256 _amount) external onlyOwner {
+    function emergencyWithdrawToken(address _token, uint256 _amount) external onlyOwner nonReentrant {
         require(_token != address(0), "Invalid token");
         require(_amount > 0, "Invalid amount");
         bool success = IERC20(_token).transfer(owner, _amount);
@@ -310,7 +333,7 @@ contract HelioraPayment {
         emit EmergencyTokenWithdraw(_token, _amount);
     }
 
-    function emergencyWithdrawETH() external onlyOwner {
+    function emergencyWithdrawETH() external onlyOwner nonReentrant {
         uint256 bal = address(this).balance;
         require(bal > 0, "No ETH");
         (bool sent, ) = owner.call{value: bal}("");

@@ -157,6 +157,7 @@ contract HelioraStaking {
     }
 
     function recordExecution(address _executor) external onlySlasher {
+        require(executorStakes[_executor].active, "Executor not staked");
         executorStakes[_executor].executionCount++;
     }
 
@@ -265,6 +266,7 @@ contract HelioraStaking {
     // =========================================================================
 
     function setSlasher(address _slasher) external onlyOwner {
+        require(_slasher != address(0), "Invalid slasher");
         slasher = _slasher;
         emit SlasherUpdated(_slasher);
     }
