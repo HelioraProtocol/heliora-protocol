@@ -1,0 +1,15 @@
+{
+  "name": "heliora-protocol",
+  "version": "2.1.0",
+  "description": "Execution Layer for On-Chain Automation on Base",
+  "license": "MIT",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "clean": "hardhat clean"
+  },
+  "devDependencies": {
+    "hardhat": "^2.22.0",
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0"
+  }
+}
