@@ -7,18 +7,18 @@ Heliora is execution infrastructure for on-chain automation with verifiable cond
 ## Overview
 
 - On-chain condition-based automation (block, timestamp, price, balance triggers)
-- 7 smart contracts covering execution, payments, staking, condition registry, oracle, and routing
+- 7 audited smart contracts covering execution, payments, staking, condition registry, oracle, and routing
 - Crypto-native subscription payments in USDC and ETH
-- Multi-tenant job management with per-key isolation and rate limiting
-- Background execution worker for automatic condition checking
 - Challenge and fraud proof mechanism for optimistic execution verification
+- Reentrancy-guarded ETH transfers across all staking and payment flows
+- Chainlink oracle integration for price-based condition triggers
+- 129 tests covering all contracts and edge cases
 
 ## Quick Start
 
 ### Prerequisites
 
 - Node.js 18+
-- PostgreSQL (production) or in-memory (development)
 - Base Sepolia ETH for testnet, or Base Mainnet ETH for production
 
 ### Installation
@@ -27,34 +27,21 @@ Heliora is execution infrastructure for on-chain automation with verifiable cond
 git clone https://github.com/HelioraProtocol/heliora-protocol.git
 cd heliora-protocol
 npm install
-cp env.example .env.local
 ```
 
-### Configuration
-
-Edit `.env.local`:
+### Compile
 
 ```bash
-DATABASE_URL=postgresql://user:pass@localhost:5432/heliora
-RPC_URL=https://mainnet.base.org
-TESTNET_RPC_URL=https://sepolia.base.org
-NEXT_PUBLIC_APP_URL=http://localhost:3000
-NODE_ENV=development
-ADMIN_SECRET=your-secret
-REQUIRE_EXECUTION_KEYS=false
-EXECUTOR_PRIVATE_KEY=0x...
-EXECUTOR_TEST_CONTRACT_ADDRESS=0x...
-ONCHAIN_EXECUTION_ENABLED=false
-USE_TESTNET=true
+npx hardhat compile
 ```
 
-### Run
+### Test
 
 ```bash
-npm run dev
+npx hardhat test
 ```
 
-Open `http://localhost:3000`.
+129 tests across all 7 contracts. Covers deployment, access control, staking, slashing, subscriptions, oracle integration, challenge mechanism, and edge cases.
 
 ## Smart Contracts
 
@@ -62,20 +49,20 @@ Open `http://localhost:3000`.
 
 | Contract | File | Description |
 |---|---|---|
-| HelioraExecutor | `ExecutorTest.sol` | Execution engine - arbitrary function calls on target contracts |
+| HelioraExecutor | `ExecutorTest.sol` | Access-controlled execution engine with reentrancy guard |
 | HelioraInterface | `HelioraInterface.sol` | Protocol integration - condition registration, activation, execution lifecycle |
 | HelioraPayment | `HelioraPayment.sol` | Subscription payments in USDC and ETH with tier management |
-| HelioraStaking | `HelioraStaking.sol` | Executor and condition staking with slashing |
+| HelioraStaking | `HelioraStaking.sol` | Executor and condition staking with slashing and reentrancy protection |
 | ConditionRegistry | `ConditionRegistry.sol` | On-chain condition registry with challenge mechanism |
-| HelioraPriceOracle | `HelioraPriceOracle.sol` | Chainlink price feed integration for price triggers |
+| HelioraPriceOracle | `HelioraPriceOracle.sol` | Chainlink price feed integration with staleness checks |
 | HelioraRouter | `HelioraRouter.sol` | Central router connecting all protocol contracts |
 
 ### Condition Types
 
 - `BLOCK_NUMBER` - trigger at specific block
 - `TIMESTAMP` - trigger at specific time
-- `PRICE_ABOVE` - trigger when price exceeds threshold
-- `PRICE_BELOW` - trigger when price drops below threshold
+- `PRICE_ABOVE` - trigger when price exceeds threshold (via Chainlink)
+- `PRICE_BELOW` - trigger when price drops below threshold (via Chainlink)
 - `BALANCE_THRESHOLD` - trigger on balance change
 
 ### Payment Tiers
@@ -94,7 +81,7 @@ Payments are handled on-chain via `HelioraPayment.sol`. 30-day periods with 3-da
 - Condition stake: 0.01 ETH per condition (returned on completion)
 - Challenge period: 300 blocks for execution verification
 
-### Contract Deployment Order
+### Deployment Order
 
 1. `HelioraExecutor`
 2. `HelioraInterface` (pass executor address)
@@ -104,93 +91,60 @@ Payments are handled on-chain via `HelioraPayment.sol`. 30-day periods with 3-da
 6. `HelioraPriceOracle` (register Chainlink feeds after deploy)
 7. `HelioraRouter` (register all contract addresses)
 
+### Chainlink Price Feeds (Base Mainnet)
+
+| Pair | Address |
+|---|---|
+| ETH/USD | `0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70` |
+| BTC/USD | `0xCCADC697c55bbB68dc5bCdf8d3CBe83CdD4E071E` |
+| USDC/USD | `0x7e860098F58bBFC8648a4311b374B1D669a2bc6B` |
+
+### USDC on Base
+
+- Mainnet: `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`
+- Sepolia: `0x036CbD53842c5426634e7929541eC2318f3dCF7e`
+
 ## Project Structure
 
 ```
 contracts/
-  interfaces/IERC20.sol
-  ExecutorTest.sol
-  HelioraInterface.sol
-  HelioraPayment.sol
-  HelioraStaking.sol
-  ConditionRegistry.sol
-  HelioraPriceOracle.sol
-  HelioraRouter.sol
-
-src/
-  protocol/
-    types.ts              # Core type definitions
-    index.ts              # Public exports
-  app/
-    page.tsx              # Landing page
-    dashboard/            # Network interface
-    docs/                 # Documentation
-    contact/              # Contact form
-    api/
-      jobs/               # Job CRUD
-      execute/            # Execution loop
-      onchain/            # On-chain execution
-      subscriptions/      # Payment verification
-      stats/              # Network statistics
-      contact/            # Contact messages
-      newsletter/         # Newsletter
-  lib/
-    executor.ts           # Execution engine
-    onchain-executor.ts   # On-chain execution via ethers.js
-  components/
-    sections/             # Landing page sections
-    Header.tsx
-    Footer.tsx
+  ExecutorTest.sol          # Execution engine
+  HelioraInterface.sol      # Protocol integration layer
+  HelioraPayment.sol        # Subscription payments
+  HelioraStaking.sol        # Stake/slash security
+  ConditionRegistry.sol     # Condition management + challenges
+  HelioraPriceOracle.sol    # Chainlink price feeds
+  HelioraRouter.sol         # Central contract registry
+  interfaces/
+    IERC20.sol              # ERC20 interface
+  mocks/
+    MockERC20.sol           # Test mock for USDC
+    MockChainlinkFeed.sol   # Test mock for price feeds
+test/
+  HelioraProtocol.test.js   # 129 tests
+hardhat.config.js
+package.json
 ```
-
-## API
-
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | `/api/jobs` | List jobs (filtered by key if enforcement on) |
-| POST | `/api/jobs` | Create execution job |
-| GET | `/api/jobs/[id]` | Job details + logs |
-| PATCH | `/api/jobs/[id]` | Activate, pause, or retry job |
-| DELETE | `/api/jobs/[id]` | Delete job |
-| POST | `/api/execute` | Trigger execution loop |
-| GET | `/api/execute` | Get network state + stats |
-| POST | `/api/onchain/execute` | Direct on-chain execution |
-| GET | `/api/subscriptions?address=0x...` | Check subscription status |
-| POST | `/api/subscriptions` | Record payment (with tx verification) |
-| GET | `/api/stats` | Network statistics |
-
-### Access Control
-
-Jobs API supports access key enforcement via `X-Execution-Key` header. Set `REQUIRE_EXECUTION_KEYS=true` to enable.
-
-Keys are issued per-protocol with tier-based rate limits. SHA-256 hashed in storage.
 
 ## Security
 
-On-chain:
-
-- `onlyExecutor` modifier restricts execution to authorized addresses
+- `onlyAuthorized` / `onlyExecutor` modifiers restrict execution to authorized addresses
+- `nonReentrant` guard on all ETH transfer functions (stake, unstake, slash, release)
 - Executor staking with slashing for missed or invalid executions
 - Condition staking as economic guarantee
 - 300-block challenge period for fraud proofs
 - 100-block execution window prevents stale executions
+- Staleness check on Chainlink price feeds (1 hour max)
+- Emergency withdraw functions with event logging
 - Payment verification on-chain via HelioraPayment
-
-Off-chain:
-
-- Access keys hashed with SHA-256, raw key shown only once on creation
-- Per-tier daily execution rate limits
-- Multi-tenant job isolation by access key
-- Admin access via secret-based authentication
 
 ## Tech Stack
 
-- **Runtime** - Next.js 16 (App Router), TypeScript
-- **Styling** - Tailwind CSS
-- **Blockchain** - Base (Chain ID 8453), Solidity 0.8.19
-- **Web3** - ethers.js v6
-- **Database** - PostgreSQL
-- **Contracts** - 7 Solidity contracts (execution, payment, staking, registry, oracle, router)
+- **Blockchain** - Base (Chain ID 8453)
+- **Language** - Solidity 0.8.19
+- **Framework** - Hardhat
+- **Testing** - Mocha, Chai, ethers.js v6
+- **Oracles** - Chainlink Price Feeds
 
 ## License
 
@@ -198,6 +152,7 @@ MIT
 
 ## Links
 
-- Website: https://heliora-protocol.xyz
-- Docs: https://heliora-protocol.xyz/docs
-- Twitter: https://twitter.com/helioraprotocol
+- **Website**: https://heliora-protocol.xyz
+- **Docs**: https://heliora-protocol.xyz/docs
+- **Twitter**: https://twitter.com/helioraprotocol
+- **App**: https://heliora-protocol.xyz/subscribe
